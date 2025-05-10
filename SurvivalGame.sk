@@ -1,0 +1,275 @@
+# ───────────── Survival Game Skript par Spart ─────────────
+
+# ───────────── COMMANDES DE CONFIGURATION ─────────────
+command /sg_setlobby:
+    permission: sg.admin
+    trigger:
+        set {sg.spawn.lobby} to location of player
+        send "&aLobby défini ici !" to player
+
+command /sg_setspawn <number>:
+    permission: sg.admin
+    trigger:
+        if arg-1 is number:
+            set {_index} to arg-1  # L'argument est un nombre
+            set {sg.spawn.arena.%{_index}%} to location of player
+            send "&aSpawn %{_index}% défini ici !" to player
+
+# ───────────── COMMANDE POUR REJOINDRE ─────────────
+command /sg_join:
+    trigger:
+        # Si l'état n'est pas défini, on le met à "waiting"
+        if {sg.state} is not set:
+            set {sg.state} to "waiting"
+
+        # Si l'état est "waiting", on vérifie si le joueur peut rejoindre
+        if {sg.state} is "waiting" or "starting":
+            if player is not in {sg.players::*}:  # Vérification si le joueur n'est pas déjà dans la partie
+                add player to {sg.players::*}
+                send "&aTu as rejoint Survival Game !" to player
+            else:
+                send "&eTu es déjà dans la partie." to player
+        else if {sg.state} is "started":  # Si la partie a déjà commencé
+            send "&cLa partie est déjà en cours, tu ne peux plus rejoindre." to player
+
+command /sg_leave:
+    trigger:
+        remove player from {sg.players::*}
+        endgame()
+        send "&cTu as quitté la partie Survival Game." to player
+        send "&7Joueurs restants : %{sg.players::*}%" to {sg.players::*}
+        set {sg.state} to "waiting"
+
+command /sg_forcestop:
+    permission: sg.admin
+    trigger:
+        set {sg.state} to "waiting"
+        clear {sg.players::*}
+        delete {sg.timer}
+        endgame()
+        broadcast "&eLa partie a été réinitialisée et est maintenant prête à recommencer."
+
+# ───────────── COMMANDE POUR RÉNITIALISÉ LA ZONE ─────────────
+
+command /sg_setzone1:
+    permission: sg.admin
+    trigger:
+        set {sg.zone1} to location of player
+        send "&aPremier point défini en &e%location of player%"
+
+command /sg_setzone2:
+    permission: sg.admin
+    trigger:
+        set {sg.zone2} to location of player
+        send "&aDeuxième point défini en &e%location of player%"
+
+command /sg_fillchests:
+    permission: sg.admin
+    trigger:
+        if {sg.zone1} is not set:
+            send "&cLe point 1 n'est pas défini !"
+        if {sg.zone2} is not set:
+            send "&cLe point 2 n'est pas défini !"
+        regenchest()
+
+
+# ───────────── COMMANDE OPTIONEL ─────────────
+
+command /sg_list:
+    permission: sg.admin
+    trigger:
+        send "&eJoueurs en jeu : &a%{sg.players::*}%"
+# ───────────── LANCEMENT AUTOMATIQUE ─────────────
+
+every 5 seconds:
+    if {sg.state} is "waiting":
+        if size of {sg.players::*} >= 2:
+            if {sg.starting} is not set:
+                regenchest()
+                execute console command "border set SurvivalGame 650 526 -574"
+                set {sg.starting} to true
+                set {sg.countdown} to 30
+                broadcast "&eLa partie commence dans 30 secondes ! Faites vite /sg_join pour participer."
+                set {sg.state} to "starting"
+                delete {sg.starting}
+every 1 second:
+    if {sg.state} is "starting":
+        subtract 1 from {sg.countdown}
+        if {sg.countdown} <= 0:
+            set {sg.state} to "started"
+            send "&eLe PvP est désactivé pendant 30 secondes." to {sg.players::*}
+            execute console command "mv modify set pvp false SurvivalGame"
+            delete {sg.starting}
+            delete {sg.countdown}
+
+            clear {sg.allplayers::*}
+            
+        else if {sg.countdown} <= 10:
+            tpplayer()
+            send "&eLa partie commence dans &c%{sg.countdown}% &eseconde(s) !" to {sg.players::*}
+        delete {sg.frozen}
+
+# ───────────── COMPTAGE DU TEMPS ET FIN AUTOMATIQUE ─────────────
+every 30 seconds:
+    if {sg.state} is "started":
+        if {sg.timer} is not set:
+            set {sg.timer} to 350 # 5:50
+        subtract 30 from {sg.timer}
+        set {_minutes} to floor({sg.timer} / 60)
+        set {_seconds} to {sg.timer} - ({_minutes} * 60)
+        if {_minutes} = 5:
+            if {_seconds} = 20:
+                send "&eLe PvP est activé !" to {sg.players::*}
+                execute console command "mv modify set pvp true SurvivalGame"
+        set {_formattedSeconds} to "%{_seconds}%"
+        if {_minutes} < 2:
+            if {_seconds} > 20:
+                if {_minutes} > 0:
+                    broadcast "&eCombat final &7: &cVous avez 2 minutes, bonne chance !"
+                    execute console command "border set SurvivalGame 100 526 -574"
+                    set {_i} to 1
+                    loop {sg.players::*}:
+                        teleport loop-value to {sg.spawn.arena.%{_i}%}
+                        send "Téléporté %{loop-value}% à %{sg.spawn.arena.%{_i}%}%" to console
+                        add 1 to {_i}
+        if {_seconds} < 30:
+            broadcast "&eIl reste &c%{_minutes}%:%{_formattedSeconds}% &eavant la fin de la partie !"
+
+        if {sg.timer} <= 0:
+            broadcast "&eLa partie est terminée. &cPersonne ne remporte la victoire !"
+
+            # ───── Tp au lobby ─────
+            loop {sg.players::*}:
+                teleport loop-value to {sg.spawn.lobby}
+
+            # ───── CLASSEMENT DES KILLS ─────
+            broadcast "&6Classement des kills :"
+            loop {sg.players::*}:
+                set {_p} to loop-value
+                if {sg.kills.%{_p}%} is not set:
+                    set {sg.kills.%{_p}%} to 0
+                broadcast "&e%{_p}% &7→ &c%{sg.kills.%{_p}%}% &ekill(s)"
+            set {sg.state} to "waiting"
+            loop {sg.players::*}:
+                delete {sg.kills.%loop-value%}
+            clear {sg.players::*}
+            delete {sg.timer}
+            
+
+# ───────────── ÉVÉNEMENT DE MORT / FIN DE PARTIE ─────────────
+on death of player:
+    if {sg.state} is "started":
+        # Compteur de kills
+        if attacker is a player:
+            add 1 to {sg.kills.%attacker%}
+            send "&aTu as maintenant &e%{sg.kills.%attacker%}% &akill(s) !" to attacker
+            
+
+on respawn:
+    if {sg.state} is "started":
+        remove player from {sg.players::*}
+        set player's game mode to survival
+        teleport player to {sg.spawn.lobby}
+        endgame()
+# ───────────── TELEPORT PLAYER FREEZ AND CLEAR ─────────────
+function tpplayer():
+    set {_i} to 1
+    loop {sg.players::*}:
+        set {_p} to loop-value
+        broadcast "TP %{_p}% à spawn %{_i}%"
+        set {_p}'s game mode to survival
+        delete {sg.kills.%{_p}%}
+        teleport {_p} to {sg.spawn.arena.%{_i}%}
+        set {_p}'s health to 20
+        set {_p}'s food level to 20
+        clear potion effects of {_p}
+        clear inventory of {_p}
+        add 1 to {_i}
+    set {sg.frozen} to true
+
+
+
+on player move: 
+    if {sg.frozen} is true:
+        if player is in {sg.players::*}:
+            cancel event
+# ───────────── FIN DE PARTIE - VICTOIRE AUTOMATIQUE APRÈS MORT ─────────────
+
+function endgame():
+    if size of {sg.players::*} = 1:
+        set {_winner} to first element of {sg.players::*}
+        broadcast "&6%{_winner}% remporte la partie avec &c%{sg.kills.%{_winner}%}% &6kill(s) !"
+        wait 5 seconds 
+        set {sg.state} to "waiting"
+        delete {sg.timer}
+        teleport {_winner} to {sg.spawn.lobby}
+        if {sg.state} is "started": 
+            loop {sg.players::*}:
+                set loop-value's game mode to survival
+                teleport loop-value to {sg.spawn.lobby}
+        clear {sg.players::*}
+
+# ───────────── REGEN LES COFFRES ─────────────
+
+function regenchest():
+    set {_minX} to min(x-coordinate of {sg.zone1}, x-coordinate of {sg.zone2})
+    set {_maxX} to max(x-coordinate of {sg.zone1}, x-coordinate of {sg.zone2})
+    set {_minY} to min(y-coordinate of {sg.zone1}, y-coordinate of {sg.zone2})
+    set {_maxY} to max(y-coordinate of {sg.zone1}, y-coordinate of {sg.zone2})
+    set {_minZ} to min(z-coordinate of {sg.zone1}, z-coordinate of {sg.zone2})
+    set {_maxZ} to max(z-coordinate of {sg.zone1}, z-coordinate of {sg.zone2})
+    set {_world} to world of {sg.zone1}
+
+    set {_x} to {_minX}
+    while {_x} <= {_maxX}:  # Boucle while avec condition
+        set {_y} to {_minY}
+        while {_y} <= {_maxY}:  # Boucle while pour Y
+            set {_z} to {_minZ}
+            while {_z} <= {_maxZ}:  # Boucle while pour Z
+                set {_loc} to location at {_x}, {_y}, {_z} in {_world}
+                if block at {_loc} is chest:
+                    clear block at {_loc}'s inventory
+                    fillChest({_loc})  # Appel de la fonction fillChest pour remplir le coffre
+                set {_z} to {_z} + 1  # Incrémentation de Z
+            set {_y} to {_y} + 1  # Incrémentation de Y
+        set {_x} to {_x} + 1  # Incrémentation de X
+        wait 5 ticks
+
+function fillChest(loc: location):
+    set {_inv} to inventory of block at {_loc}
+    set {_itemCount} to random integer between 3 and 5
+    set {_usedItems::*} to nothing
+    set {_usedSlots::*} to nothing
+
+    loop {_itemCount} times:
+        loop 10 times:
+            set {_item} to randomChestItem()
+            if {_item} is not in {_usedItems::*}:
+                add {_item} to {_usedItems::*}
+                set {_placed} to false
+                loop 10 times:
+                    set {_slot} to random integer between 0 and 26
+                    if {_slot} is not in {_usedSlots::*}:
+                        add {_slot} to {_usedSlots::*}
+                        set slot {_slot} of {_inv} to {_item}
+                        set {_placed} to true
+                        exit loop
+                if {_placed} is true:
+                    exit loop
+
+function randomChestItem() :: item:
+    set {_loots::*} to diamond sword and cooked beef and bow and golden apple and arrow and stone sword and bread and leather helmet and leather chestplate and leather leggings and leather boots and iron helmet and iron chestplate and iron leggings and iron boots and ender pearl and iron axe and wooden axe and golden axe and iron sword and crossbow and snowball and shield and cooked chicken and splash potion of healing and splash potion of harming and splash potion of swiftness and wooden sword
+    set {_amounts::*} to 1 and 16 and 1 and 1 and 16 and 1 and 16 and 1 and 1 and 1 and 1 and 1 and 1 and 1 and 1 and 1 and 1 and 1 and 1 and 1 and 1 and 16 and 1 and 16 and 1 and 1 and 1 and 1 and 1
+
+    set {_index} to a random integer between 0 and (size of {_loots::*})
+    set {_item} to {_loots::%{_index}%}
+    set {_amount} to {_amounts::%{_index}%}
+    set {_randomAmount} to random integer between 1 and {_amount}
+    set amount of {_item} to {_randomAmount}
+    return {_item}
+
+
+    # ───────────── BONUS ─────────────
+on break:
+    if {sg.state} is "started":
+        cancel event
