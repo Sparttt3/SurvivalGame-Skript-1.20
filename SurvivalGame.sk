@@ -22,10 +22,11 @@ command /sg_join:
         if {sg.state} is not set:
             set {sg.state} to "waiting"
 
-        # Si l'état est "waiting", on vérifie si le joueur peut rejoindre
+        # Si l'état est "waiting" ou "starting"
         if {sg.state} is "waiting" or "starting":
             if player is not in {sg.players::*}:  # Vérification si le joueur n'est pas déjà dans la partie
                 add player to {sg.players::*}
+                teleport player to {sg.spawn.lobby}
                 send "&aTu as rejoint Survival Game !" to player
             else:
                 send "&eTu es déjà dans la partie." to player
@@ -34,11 +35,22 @@ command /sg_join:
 
 command /sg_leave:
     trigger:
-        remove player from {sg.players::*}
-        endgame()
-        send "&cTu as quitté la partie Survival Game." to player
-        send "&7Joueurs restants : %{sg.players::*}%" to {sg.players::*}
-        set {sg.state} to "waiting"
+        set {_i} to 1
+        while {_i} <= 32:
+            if {sg.players::%{_i}%} is player:
+                delete {sg.players::%{_i}%}
+                send "&cTu as quitté la partie Survival Game." to player
+                send "&7Joueurs restants : %{sg.players::*}%" to player
+                stop
+            add 1 to {_i}
+        set {_restants} to 0
+        set {_i} to 1
+        while {_i} <= 32:
+            if {sg.players::%{_i}%} is set:
+                add 1 to {_restants}
+            add 1 to {_i}
+        if {_restants} is 0:
+            set {sg.state} to "waiting"
 
 command /sg_forcestop:
     permission: sg.admin
@@ -74,19 +86,31 @@ command /sg_fillchests:
 
 
 # ───────────── COMMANDE OPTIONEL ─────────────
-
 command /sg_list:
     permission: sg.admin
     trigger:
         send "&eJoueurs en jeu : &a%{sg.players::*}%"
+
+
+command /sg_setborder <number>:
+    permission: sg.admin
+    trigger:
+        set {sg.size} to argument
+        set {sg._x} to rounded x-coordinate of player
+        set {sg._z} to rounded z-coordinate of player
+        set {sg._cmd1} to "border set %{sg._world}% %{sg.size}% %{sg._x}% %{sg._z}%" #START GAME SIZE
+        set {sg._cmd2} to "border set %{sg._world}% 70 %{sg._x}% %{sg._z}%" #END GAME SIZE
+        set {sg._world} to world of player
 # ───────────── LANCEMENT AUTOMATIQUE ─────────────
 
 every 5 seconds:
     if {sg.state} is "waiting":
+        loop players in {sg.players::*}:
+            set slot 8 of loop-player's inventory to compass named "&cQuitter la partie"
         if size of {sg.players::*} >= 2:
             if {sg.starting} is not set:
                 regenchest()
-                execute console command "border set SurvivalGame 650 526 -574"
+                execute console command {sg._cmd1} #TAILL DEBUT DE GAME
                 set {sg.starting} to true
                 set {sg.countdown} to 30
                 broadcast "&eLa partie commence dans 30 secondes ! Faites vite /sg_join pour participer."
@@ -98,7 +122,8 @@ every 1 second:
         if {sg.countdown} <= 0:
             set {sg.state} to "started"
             send "&eLe PvP est désactivé pendant 30 secondes." to {sg.players::*}
-            execute console command "mv modify set pvp false SurvivalGame"
+            set {sg.frozen} to false
+            execute console command "mv modify set pvp false %{sg._world}%"
             delete {sg.starting}
             delete {sg.countdown}
 
@@ -106,8 +131,9 @@ every 1 second:
             
         else if {sg.countdown} <= 10:
             tpplayer()
+            set {sg.frozen} to true
+            broadcast {sg.frozen}
             send "&eLa partie commence dans &c%{sg.countdown}% &eseconde(s) !" to {sg.players::*}
-        delete {sg.frozen}
 
 # ───────────── COMPTAGE DU TEMPS ET FIN AUTOMATIQUE ─────────────
 every 30 seconds:
@@ -120,13 +146,13 @@ every 30 seconds:
         if {_minutes} = 5:
             if {_seconds} = 20:
                 send "&eLe PvP est activé !" to {sg.players::*}
-                execute console command "mv modify set pvp true SurvivalGame"
+                execute console command "mv modify set pvp true %{sg._world}%"
         set {_formattedSeconds} to "%{_seconds}%"
         if {_minutes} < 2:
             if {_seconds} > 20:
                 if {_minutes} > 0:
                     broadcast "&eCombat final &7: &cVous avez 2 minutes, bonne chance !"
-                    execute console command "border set SurvivalGame 100 526 -574"
+                    execute console command {sg._cmd2}
                     set {_i} to 1
                     loop {sg.players::*}:
                         teleport loop-value to {sg.spawn.arena.%{_i}%}
@@ -164,9 +190,9 @@ on death of player:
             add 1 to {sg.kills.%attacker%}
             send "&aTu as maintenant &e%{sg.kills.%attacker%}% &akill(s) !" to attacker
             
-
 on respawn:
     if {sg.state} is "started":
+        clear inventory of player
         remove player from {sg.players::*}
         set player's game mode to survival
         teleport player to {sg.spawn.lobby}
@@ -176,7 +202,6 @@ function tpplayer():
     set {_i} to 1
     loop {sg.players::*}:
         set {_p} to loop-value
-        broadcast "TP %{_p}% à spawn %{_i}%"
         set {_p}'s game mode to survival
         delete {sg.kills.%{_p}%}
         teleport {_p} to {sg.spawn.arena.%{_i}%}
@@ -185,18 +210,15 @@ function tpplayer():
         clear potion effects of {_p}
         clear inventory of {_p}
         add 1 to {_i}
-    set {sg.frozen} to true
 
-
-
-on player move: 
+on player move:
     if {sg.frozen} is true:
-        if player is in {sg.players::*}:
-            cancel event
+        cancel event
 # ───────────── FIN DE PARTIE - VICTOIRE AUTOMATIQUE APRÈS MORT ─────────────
 
 function endgame():
     if size of {sg.players::*} = 1:
+        clear inventory of {sg.players::*}
         set {_winner} to first element of {sg.players::*}
         broadcast "&6%{_winner}% remporte la partie avec &c%{sg.kills.%{_winner}%}% &6kill(s) !"
         wait 5 seconds 
@@ -207,6 +229,7 @@ function endgame():
             loop {sg.players::*}:
                 set loop-value's game mode to survival
                 teleport loop-value to {sg.spawn.lobby}
+        execute console command "mv modify set pvp false %{sg._world}%"
         clear {sg.players::*}
 
 # ───────────── REGEN LES COFFRES ─────────────
@@ -273,3 +296,8 @@ function randomChestItem() :: item:
 on break:
     if {sg.state} is "started":
         cancel event
+
+on rightclick holding a compass:
+    if name of player's tool is "&cQuitter la partie":
+        execute player command "sg_leave"
+        execute player command "spawn"
