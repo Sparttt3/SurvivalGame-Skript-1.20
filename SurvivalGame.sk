@@ -25,11 +25,13 @@ command /sg_join:
         # Si l'état est "waiting" ou "starting"
         if {sg.state} is "waiting" or "starting":
             if player is not in {sg.players::*}:  # Vérification si le joueur n'est pas déjà dans la partie
-                clear potion effects of player
-                apply saturation potion of tier 3 without any particles whilst hiding the potion icon to the player for 999 days 
-                add player to {sg.players::*}
                 teleport player to {sg.spawn.lobby}
                 send "&aTu as rejoint Survival Game !" to player
+                add player to {sg.players::*}
+                apply saturation potion of tier 3 without any particles whilst hiding the potion icon to the player for 999 days 
+                clear potion effects of player
+                clear inventory of player
+                set slot 8 of player to red bed named "&cQuitter la partie"
             else:
                 send "&eTu es déjà dans la partie." to player
         else if {sg.state} is "started":  # Si la partie a déjà commencé
@@ -107,8 +109,6 @@ command /sg_setborder <number>:
 
 every 5 seconds:
     if {sg.state} is "waiting":
-        loop players in {sg.players::*}:
-            set slot 8 of loop-player's inventory to compass named "&cQuitter la partie"
         if size of {sg.players::*} >= 2:
             if {sg.starting} is not set:
                 regenchest()
@@ -134,7 +134,6 @@ every 1 second:
         else if {sg.countdown} <= 10:
             tpplayer()
             set {sg.frozen} to true
-            broadcast {sg.frozen}
             send "&eLa partie commence dans &c%{sg.countdown}% &eseconde(s) !" to {sg.players::*}
 
 # ───────────── COMPTAGE DU TEMPS ET FIN AUTOMATIQUE ─────────────
@@ -194,10 +193,11 @@ on death of player:
             
 on respawn:
     if {sg.state} is "started":
+        wait 1 tick
+        execute player command "spawn"
         clear inventory of player
         remove player from {sg.players::*}
         set player's game mode to survival
-        teleport player to {sg.spawn.lobby}
         endgame()
 # ───────────── TELEPORT PLAYER FREEZ AND CLEAR ─────────────
 function tpplayer():
@@ -225,12 +225,8 @@ function endgame():
         broadcast "&6%{_winner}% remporte la partie avec &c%{sg.kills.%{_winner}%}% &6kill(s) !"
         wait 5 seconds 
         set {sg.state} to "waiting"
+        execute {_winner} command "spawn"
         delete {sg.timer}
-        teleport {_winner} to {sg.spawn.lobby}
-        if {sg.state} is "started": 
-            loop {sg.players::*}:
-                set loop-value's game mode to survival
-                teleport loop-value to {sg.spawn.lobby}
         execute console command "mv modify set pvp false %{sg._world}%"
         clear {sg.players::*}
 
@@ -299,7 +295,15 @@ on break:
     if {sg.state} is "started":
         cancel event
 
-on rightclick holding a compass:
+on rightclick holding a red bed:
     if name of player's tool is "&cQuitter la partie":
         execute player command "sg_leave"
         execute player command "spawn"
+
+on drop:
+    if player's tool is red bed named "&cQuitter la partie":
+        cancel event
+
+on drop:
+    if event-item is red bed named "&cQuitter la partie":
+        cancel event
