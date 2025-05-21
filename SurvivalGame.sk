@@ -25,6 +25,8 @@ command /sg_join:
         # Si l'état est "waiting" ou "starting"
         if {sg.state} is "waiting" or "starting":
             if player is not in {sg.players::*}:  # Vérification si le joueur n'est pas déjà dans la partie
+                clear potion effects of player
+                apply saturation potion of tier 3 without any particles whilst hiding the potion icon to the player for 999 days 
                 add player to {sg.players::*}
                 teleport player to {sg.spawn.lobby}
                 send "&aTu as rejoint Survival Game !" to player
