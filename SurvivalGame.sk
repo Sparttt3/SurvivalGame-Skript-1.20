@@ -39,21 +39,25 @@ command /sg_join:
 
 command /sg_leave:
     trigger:
-        set {_i} to 1
-        while {_i} <= 32:
-            if {sg.players::%{_i}%} is player:
-                delete {sg.players::%{_i}%}
+        set {_name} to player's name
+
+        # Vérifie si le joueur est bien dans la partie
+        set {_found} to false
+        loop {sg.players::*}:
+            if loop-value's name is {_name}:
+                execute loop-value command "spawn"
+                remove loop-value from {sg.players::*}
+                set {_found} to true
                 send "&cTu as quitté la partie Survival Game." to player
                 send "&7Joueurs restants : %{sg.players::*}%" to player
                 stop
-            add 1 to {_i}
-        set {_restants} to 0
-        set {_i} to 1
-        while {_i} <= 32:
-            if {sg.players::%{_i}%} is set:
-                add 1 to {_restants}
-            add 1 to {_i}
-        if {_restants} is 0:
+
+        if {_found} is false:
+            send "&eTu n'es pas dans la partie." to player
+            stop
+
+        # Si plus de joueurs, réinitialiser l’état
+        if size of {sg.players::*} is 0:
             set {sg.state} to "waiting"
 
 command /sg_forcestop:
@@ -111,8 +115,6 @@ every 5 seconds:
     if {sg.state} is "waiting":
         if size of {sg.players::*} >= 2:
             if {sg.starting} is not set:
-                regenchest()
-                execute console command {sg._cmd1} #TAILL DEBUT DE GAME
                 set {sg.starting} to true
                 set {sg.countdown} to 30
                 broadcast "&eLa partie commence dans 30 secondes ! Faites vite /sg_join pour participer."
@@ -120,12 +122,16 @@ every 5 seconds:
                 delete {sg.starting}
 every 1 second:
     if {sg.state} is "starting":
+        if size of {sg.players::*} < 2:
+            broadcast "Sauvetage"
+            set {sg.state} to "waiting"
+    if {sg.state} is "starting":
         subtract 1 from {sg.countdown}
         if {sg.countdown} <= 0:
             set {sg.state} to "started"
             send "&eLe PvP est désactivé pendant 30 secondes." to {sg.players::*}
             set {sg.frozen} to false
-            execute console command "mv modify set pvp false %{sg._world}%"
+            set {sg.pvp} to false
             delete {sg.starting}
             delete {sg.countdown}
 
@@ -134,7 +140,7 @@ every 1 second:
         else if {sg.countdown} <= 10:
             tpplayer()
             set {sg.frozen} to true
-            send "&eLa partie commence dans &c%{sg.countdown}% &eseconde(s) !" to {sg.players::*}
+            send "&eDémarrage dans &c%{sg.countdown}%" to {sg.players::*}
 
 # ───────────── COMPTAGE DU TEMPS ET FIN AUTOMATIQUE ─────────────
 every 30 seconds:
@@ -147,7 +153,7 @@ every 30 seconds:
         if {_minutes} = 5:
             if {_seconds} = 20:
                 send "&eLe PvP est activé !" to {sg.players::*}
-                execute console command "mv modify set pvp true %{sg._world}%"
+                set {sg.pvp} to true
         set {_formattedSeconds} to "%{_seconds}%"
         if {_minutes} < 2:
             if {_seconds} > 20:
@@ -203,6 +209,7 @@ on respawn:
 function tpplayer():
     set {_i} to 1
     loop {sg.players::*}:
+        wait 1 tick
         set {_p} to loop-value
         set {_p}'s game mode to survival
         delete {sg.kills.%{_p}%}
@@ -216,6 +223,16 @@ function tpplayer():
 on player move:
     if {sg.frozen} is true:
         cancel event
+
+# ───────────── GESTION DU PVP ─────────────
+on damage:
+    if {sg.pvp} is false:
+        if victim is a player:
+            loop {sg.players::*}:
+                if loop-value is victim:
+                    cancel event
+                    stop
+
 # ───────────── FIN DE PARTIE - VICTOIRE AUTOMATIQUE APRÈS MORT ─────────────
 
 function endgame():
@@ -227,7 +244,9 @@ function endgame():
         set {sg.state} to "waiting"
         execute {_winner} command "spawn"
         delete {sg.timer}
-        execute console command "mv modify set pvp false %{sg._world}%"
+        set {sg.pvp} to false
+        execute console command {sg._cmd1} #TAILL DEBUT DE GAME
+        regenchest()
         clear {sg.players::*}
 
 # ───────────── REGEN LES COFFRES ─────────────
@@ -254,7 +273,7 @@ function regenchest():
                 set {_z} to {_z} + 1  # Incrémentation de Z
             set {_y} to {_y} + 1  # Incrémentation de Y
         set {_x} to {_x} + 1  # Incrémentation de X
-        wait 5 ticks
+        wait 6 ticks
 
 function fillChest(loc: location):
     set {_inv} to inventory of block at {_loc}
