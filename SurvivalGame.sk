@@ -49,7 +49,6 @@ command /sg_leave:
                 remove loop-value from {sg.players::*}
                 set {_found} to true
                 send "&cTu as quitté la partie Survival Game." to player
-                send "&7Joueurs restants : %{sg.players::*}%" to player
                 stop
 
         if {_found} is false:
@@ -123,7 +122,6 @@ every 5 seconds:
 every 1 second:
     if {sg.state} is "starting":
         if size of {sg.players::*} < 2:
-            broadcast "Sauvetage"
             set {sg.state} to "waiting"
     if {sg.state} is "starting":
         subtract 1 from {sg.countdown}
@@ -200,10 +198,10 @@ on death of player:
 on respawn:
     if {sg.state} is "started":
         wait 1 tick
-        execute player command "spawn"
         clear inventory of player
         remove player from {sg.players::*}
         set player's game mode to survival
+        execute player command "spawn"
         endgame()
 # ───────────── TELEPORT PLAYER FREEZ AND CLEAR ─────────────
 function tpplayer():
@@ -235,11 +233,22 @@ on damage:
 
 # ───────────── FIN DE PARTIE - VICTOIRE AUTOMATIQUE APRÈS MORT ─────────────
 
+on disconnect:
+    remove player from {sg.players::*}
+    if size of {sg.players::*} = 1:
+        if {sg.state} is "started":
+            endgame()
+        if {sg.state} is "waiting" or "starting":
+            set {sg.state} to "waiting"
+
 function endgame():
     if size of {sg.players::*} = 1:
         clear inventory of {sg.players::*}
         set {_winner} to first element of {sg.players::*}
-        broadcast "&6%{_winner}% remporte la partie avec &c%{sg.kills.%{_winner}%}% &6kill(s) !"
+        if {sg.kills.%{_winner}%} > 0:
+            broadcast "&6%{_winner}% remporte la partie avec &c%{sg.kills.%{_winner}%}% &6kill(s) !"
+        else:
+            broadcast "&6%{_winner}% remporte la partie par disqualification"
         wait 5 seconds 
         set {sg.state} to "waiting"
         execute {_winner} command "spawn"
@@ -273,7 +282,7 @@ function regenchest():
                 set {_z} to {_z} + 1  # Incrémentation de Z
             set {_y} to {_y} + 1  # Incrémentation de Y
         set {_x} to {_x} + 1  # Incrémentation de X
-        wait 6 ticks
+        wait 1 ticks
 
 function fillChest(loc: location):
     set {_inv} to inventory of block at {_loc}
@@ -298,18 +307,35 @@ function fillChest(loc: location):
                     exit loop
 
 function randomChestItem() :: item:
-    set {_loots::*} to diamond sword and cooked beef and bow and golden apple and arrow and stone sword and bread and leather helmet and leather chestplate and leather leggings and leather boots and iron helmet and iron chestplate and iron leggings and iron boots and ender pearl and iron axe and wooden axe and golden axe and iron sword and crossbow and snowball and shield and cooked chicken and splash potion of healing and splash potion of harming and splash potion of swiftness and wooden sword
-    set {_amounts::*} to 1 and 16 and 1 and 1 and 16 and 1 and 16 and 1 and 1 and 1 and 1 and 1 and 1 and 1 and 1 and 1 and 1 and 1 and 1 and 1 and 1 and 16 and 1 and 16 and 1 and 1 and 1 and 1 and 1
+    set {_common::*} to bread and baked potato and cooked beef and arrow and wooden sword and snowball and leather helmet and leather chestplate
+    set {_rare::*} to iron sword and iron axe and bow and shield and splash potion of healing and iron helmet and iron chestplate and golden apple
+    set {_epic::*} to diamond sword and crossbow and splash potion of swiftness and ender pearl and trident and spectral arrow and potion of invisibility
 
-    set {_index} to a random integer between 0 and (size of {_loots::*})
-    set {_item} to {_loots::%{_index}%}
-    set {_amount} to {_amounts::%{_index}%}
-    set {_randomAmount} to random integer between 1 and {_amount}
-    set amount of {_item} to {_randomAmount}
+    set {_roll} to random integer between 1 and 100
+    if {_roll} <= 20:
+        set {_item} to random element out of {_common::*}
+    else if {_roll} <= 60:
+        set {_item} to random element out of {_rare::*}
+    else:
+        set {_item} to random element out of {_epic::*}
+
+    if {_item} is arrow:
+        set amount of {_item} to random integer between 8 and 16
+    else if {_item} is snowball:
+        set amount of {_item} to random integer between 8 and 16
+    else:
+        set amount of {_item} to 1
+
     return {_item}
 
 
     # ───────────── BONUS ─────────────
+
+on skript start:  
+    set {sg.state} to "waiting"
+    clear {sg.players::*}
+    delete {sg.timer}
+
 on break:
     if {sg.state} is "started":
         cancel event
@@ -317,7 +343,6 @@ on break:
 on rightclick holding a red bed:
     if name of player's tool is "&cQuitter la partie":
         execute player command "sg_leave"
-        execute player command "spawn"
 
 on drop:
     if player's tool is red bed named "&cQuitter la partie":
