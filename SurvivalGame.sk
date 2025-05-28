@@ -25,13 +25,13 @@ command /sg_join:
         # Si l'état est "waiting" ou "starting"
         if {sg.state} is "waiting" or "starting":
             if player is not in {sg.players::*}:  # Vérification si le joueur n'est pas déjà dans la partie
-                teleport player to {sg.spawn.lobby}
-                send "&aTu as rejoint Survival Game !" to player
-                add player to {sg.players::*}
-                apply saturation potion of tier 3 without any particles whilst hiding the potion icon to the player for 999 days 
                 clear potion effects of player
                 clear inventory of player
+                teleport player to {sg.spawn.lobby}
+                add player to {sg.players::*}
+                apply saturation potion of tier 3 without any particles whilst hiding the potion icon to the player for 999 days 
                 set slot 8 of player to red bed named "&cQuitter la partie"
+                send "&aTu as rejoint Survival Game !" to player
             else:
                 send "&eTu es déjà dans la partie." to player
         else if {sg.state} is "started":  # Si la partie a déjà commencé
@@ -50,9 +50,7 @@ command /sg_leave:
                 set {_found} to true
                 send "&cTu as quitté la partie Survival Game." to player
                 stop
-
         if {_found} is false:
-            send "&eTu n'es pas dans la partie." to player
             stop
 
         # Si plus de joueurs, réinitialiser l’état
@@ -69,7 +67,6 @@ command /sg_forcestop:
         broadcast "&eLa partie a été réinitialisée et est maintenant prête à recommencer."
 
 # ───────────── COMMANDE POUR RÉNITIALISÉ LA ZONE ─────────────
-
 command /sg_setzone1:
     permission: sg.admin
     trigger:
@@ -109,26 +106,28 @@ command /sg_setborder <number>:
         set {sg._cmd2} to "border set %{sg._world}% 70 %{sg._x}% %{sg._z}%" #END GAME SIZE
         set {sg._world} to world of player
 # ───────────── LANCEMENT AUTOMATIQUE ─────────────
-
-every 5 seconds:
+every 1 second:
     if {sg.state} is "waiting":
         if size of {sg.players::*} >= 2:
             if {sg.starting} is not set:
                 set {sg.starting} to true
-                set {sg.countdown} to 30
-                broadcast "&eLa partie commence dans 30 secondes ! Faites vite /sg_join pour participer."
+                set {sg.countdown} to 60
                 set {sg.state} to "starting"
                 delete {sg.starting}
-every 1 second:
+        else:
+            send action bar "&e&lEncore %(2-(size of {sg.players::*}))% avant de lancer la partie !" to {sg.players::*}
     if {sg.state} is "starting":
         if size of {sg.players::*} < 2:
             set {sg.state} to "waiting"
     if {sg.state} is "starting":
         subtract 1 from {sg.countdown}
+        send action bar "&e&lDémarrage dans &c&l%{sg.countdown}%" to {sg.players::*}
         if {sg.countdown} <= 0:
             set {sg.state} to "started"
             send "&eLe PvP est désactivé pendant 30 secondes." to {sg.players::*}
             set {sg.frozen} to false
+            play sound "item.shield.break" to {sg.players::*}
+            send title " " to {sg.players::*}
             set {sg.pvp} to false
             delete {sg.starting}
             delete {sg.countdown}
@@ -138,7 +137,15 @@ every 1 second:
         else if {sg.countdown} <= 10:
             tpplayer()
             set {sg.frozen} to true
-            send "&eDémarrage dans &c%{sg.countdown}%" to {sg.players::*}
+            send title "&eDémarrage dans &c%{sg.countdown}%" to {sg.players::*}
+            play sound "block.note_block.hat" to {sg.players::*}
+            if {sg.countdown} > 9:
+                set {_i} to 1
+                loop {sg.players::*}:
+                    wait 1 tick
+                    set {_p} to loop-value
+                    teleport {_p} to {sg.spawn.arena.%{_i}%}
+                    add 1 to {_i}
 
 # ───────────── COMPTAGE DU TEMPS ET FIN AUTOMATIQUE ─────────────
 every 30 seconds:
@@ -151,6 +158,7 @@ every 30 seconds:
         if {_minutes} = 5:
             if {_seconds} = 20:
                 send "&eLe PvP est activé !" to {sg.players::*}
+                play sound "entity.blaze.shoot" to {sg.players::*}
                 set {sg.pvp} to true
         set {_formattedSeconds} to "%{_seconds}%"
         if {_minutes} < 2:
@@ -211,7 +219,6 @@ function tpplayer():
         set {_p} to loop-value
         set {_p}'s game mode to survival
         delete {sg.kills.%{_p}%}
-        teleport {_p} to {sg.spawn.arena.%{_i}%}
         set {_p}'s health to 20
         set {_p}'s food level to 20
         clear potion effects of {_p}
@@ -220,8 +227,10 @@ function tpplayer():
 
 on player move:
     if {sg.frozen} is true:
-        cancel event
-
+        loop {sg.players::*}:
+            if loop-value is player:
+                cancel event
+                stop
 # ───────────── GESTION DU PVP ─────────────
 on damage:
     if {sg.pvp} is false:
@@ -232,7 +241,6 @@ on damage:
                     stop
 
 # ───────────── FIN DE PARTIE - VICTOIRE AUTOMATIQUE APRÈS MORT ─────────────
-
 on disconnect:
     remove player from {sg.players::*}
     if size of {sg.players::*} = 1:
@@ -249,6 +257,7 @@ function endgame():
             broadcast "&6%{_winner}% remporte la partie avec &c%{sg.kills.%{_winner}%}% &6kill(s) !"
         else:
             broadcast "&6%{_winner}% remporte la partie par disqualification"
+        play sound "entity.player.levelup" to {_winner}
         wait 5 seconds 
         set {sg.state} to "waiting"
         execute {_winner} command "spawn"
@@ -259,7 +268,6 @@ function endgame():
         clear {sg.players::*}
 
 # ───────────── REGEN LES COFFRES ─────────────
-
 function regenchest():
     set {_minX} to min(x-coordinate of {sg.zone1}, x-coordinate of {sg.zone2})
     set {_maxX} to max(x-coordinate of {sg.zone1}, x-coordinate of {sg.zone2})
@@ -307,22 +315,26 @@ function fillChest(loc: location):
                     exit loop
 
 function randomChestItem() :: item:
-    set {_common::*} to bread and baked potato and cooked beef and arrow and wooden sword and snowball and leather helmet and leather chestplate
-    set {_rare::*} to iron sword and iron axe and bow and shield and splash potion of healing and iron helmet and iron chestplate and golden apple
-    set {_epic::*} to diamond sword and crossbow and splash potion of swiftness and ender pearl and trident and spectral arrow and potion of invisibility
+    set {_common::*} to baked potato and arrow and wooden sword and snowball and leather helmet and leather leggings and leather boots and leather chestplate and wooden sword and stone sword
+    set {_rare::*} to iron sword and iron axe and bow and splash potion of healing and iron helmet and iron boots and chainmail helmet and chainmail leggings and chainmail chestplate and chainmail boots and cooked chicken
+    set {_epic::*} to diamond sword and splash potion of swiftness and ender pearl and potion of invisibility and golden apple
 
     set {_roll} to random integer between 1 and 100
-    if {_roll} <= 20:
+    if {_roll} <= 60:
         set {_item} to random element out of {_common::*}
-    else if {_roll} <= 60:
+    else if {_roll} <= 90:
         set {_item} to random element out of {_rare::*}
     else:
         set {_item} to random element out of {_epic::*}
 
     if {_item} is arrow:
-        set amount of {_item} to random integer between 8 and 16
+        set amount of {_item} to random integer between 2 and 5
     else if {_item} is snowball:
-        set amount of {_item} to random integer between 8 and 16
+        set amount of {_item} to random integer between 2 and 4
+    else if {_item} is cooked chicken:
+        set amount of {_item} to random integer between 2 and 5
+    else if {_item} is baked potato:
+        set amount of {_item} to random integer between 1 and 4
     else:
         set amount of {_item} to 1
 
@@ -330,7 +342,6 @@ function randomChestItem() :: item:
 
 
     # ───────────── BONUS ─────────────
-
 on skript start:  
     set {sg.state} to "waiting"
     clear {sg.players::*}
