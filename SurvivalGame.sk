@@ -21,20 +21,25 @@ command /sg_join:
         # Si l'état n'est pas défini, on le met à "waiting"
         if {sg.state} is not set:
             set {sg.state} to "waiting"
+        if {sg.close} is not set:
+            set {sg.close} to false
 
-        # Si l'état est "waiting" ou "starting"
-        if {sg.state} is "waiting" or "starting":
-            if player is not in {sg.players::*}:  # Vérification si le joueur n'est pas déjà dans la partie
-                clear potion effects of player
-                clear inventory of player
-                teleport player to {sg.spawn.lobby}
-                add player to {sg.players::*}
-                apply saturation potion of tier 3 without any particles whilst hiding the potion icon to the player for 999 days 
-                set slot 8 of player to red bed named "&cQuitter la partie"
-                send "&aTu as rejoint Survival Game !" to player
-            else:
-                send "&eTu es déjà dans la partie." to player
-        else if {sg.state} is "started":  # Si la partie a déjà commencé
+        if {sg.close} is false:
+            if {sg.state} is "waiting" or "starting": # Si l'état est "waiting" ou "starting"
+                if player is not in {sg.players::*}:  # Vérification si le joueur n'est pas déjà dans la partie
+                    clear potion effects of player
+                    clear inventory of player
+                    add player to {sg.players::*}
+                    apply saturation potion of tier 3 without any particles whilst hiding the potion icon to the player for 999 days 
+                    set slot 8 of player to red bed named "&c&lQuitter la partie"
+                    send "&aTu as rejoint Survival Game !" to player
+                    wait 2 tick
+                    teleport player to {sg.spawn.lobby}
+                else:
+                    send "&eTu es déjà dans la partie." to player
+            else if {sg.state} is "started":  # Si la partie a déjà commencé
+                send "&cLa partie est déjà en cours, tu ne peux plus rejoindre." to player
+        else:
             send "&cLa partie est déjà en cours, tu ne peux plus rejoindre." to player
 
 command /sg_leave:
@@ -61,6 +66,7 @@ command /sg_forcestop:
     permission: sg.admin
     trigger:
         set {sg.state} to "waiting"
+        set {sg.close} to "false"
         clear {sg.players::*}
         delete {sg.timer}
         endgame()
@@ -96,63 +102,63 @@ command /sg_list:
         send "&eJoueurs en jeu : &a%{sg.players::*}%"
 
 
-command /sg_setborder <number>:
+command /sg_setmaxborder <number>:
     permission: sg.admin
     trigger:
         set {sg.size} to argument
         set {sg._x} to rounded x-coordinate of player
         set {sg._z} to rounded z-coordinate of player
         set {sg._cmd1} to "border set %{sg._world}% %{sg.size}% %{sg._x}% %{sg._z}%" #START GAME SIZE
-        set {sg._cmd2} to "border set %{sg._world}% 70 %{sg._x}% %{sg._z}%" #END GAME SIZE
+        set {sg._cmd2} to "border set %{sg._world}% 40 %{sg._x}% %{sg._z}%" #END GAME SIZE
         set {sg._world} to world of player
 # ───────────── LANCEMENT AUTOMATIQUE ─────────────
 every 1 second:
-    if {sg.state} is "waiting":
-        if size of {sg.players::*} >= 2:
-            if {sg.starting} is not set:
-                set {sg.starting} to true
-                set {sg.countdown} to 60
-                set {sg.state} to "starting"
+    if size of {sg.players::*} > 0:
+        if {sg.state} is "waiting":
+            if size of {sg.players::*} >= 2:
+                if {sg.starting} is not set:
+                    execute console command {sg._cmd1} #TAILL DEBUT DE GAME
+                    set {sg.starting} to true
+                    set {sg.countdown} to 60
+                    set {sg.state} to "starting"
+                    delete {sg.starting}
+            else:
+                send action bar "&e&lEncore %(2-(size of {sg.players::*}))% joueur(s) avant de lancer la partie !" to {sg.players::*}
+                
+        if {sg.state} is "starting":
+            subtract 1 from {sg.countdown}
+            send action bar "&e&lDémarrage dans &c&l%{sg.countdown}%" to {sg.players::*}
+            if {sg.countdown} <= 0:
+                broadcast "TEST2"
+                set {sg.state} to "started"
+                send "&eLe PvP est désactivé pendant 30 secondes." to {sg.players::*}
+                set {sg.frozen} to false
+                play sound "item.shield.break" to {sg.players::*}
+                send title " " to {sg.players::*}
+                set {sg.pvp} to false
                 delete {sg.starting}
-        else:
-            send action bar "&e&lEncore %(2-(size of {sg.players::*}))% avant de lancer la partie !" to {sg.players::*}
+                delete {sg.countdown}
+                clear {sg.allplayers::*}
+
+            else if {sg.countdown} <= 10:
+                set {sg.close} to true
+                set {sg.frozen} to true
+                send title "&eDémarrage dans &c%{sg.countdown}%" to {sg.players::*}
+                play sound "block.note_block.hat" to {sg.players::*}
+                if {sg.countdown} > 9:
+                    tpplayer()
+
+    #Si un joueur quitte la file d'attente au lobby
     if {sg.state} is "starting":
         if size of {sg.players::*} < 2:
             set {sg.state} to "waiting"
-    if {sg.state} is "starting":
-        subtract 1 from {sg.countdown}
-        send action bar "&e&lDémarrage dans &c&l%{sg.countdown}%" to {sg.players::*}
-        if {sg.countdown} <= 0:
-            set {sg.state} to "started"
-            send "&eLe PvP est désactivé pendant 30 secondes." to {sg.players::*}
-            set {sg.frozen} to false
-            play sound "item.shield.break" to {sg.players::*}
-            send title " " to {sg.players::*}
-            set {sg.pvp} to false
-            delete {sg.starting}
-            delete {sg.countdown}
 
-            clear {sg.allplayers::*}
-            
-        else if {sg.countdown} <= 10:
-            tpplayer()
-            set {sg.frozen} to true
-            send title "&eDémarrage dans &c%{sg.countdown}%" to {sg.players::*}
-            play sound "block.note_block.hat" to {sg.players::*}
-            if {sg.countdown} > 9:
-                set {_i} to 1
-                loop {sg.players::*}:
-                    wait 1 tick
-                    set {_p} to loop-value
-                    teleport {_p} to {sg.spawn.arena.%{_i}%}
-                    add 1 to {_i}
-
-# ───────────── COMPTAGE DU TEMPS ET FIN AUTOMATIQUE ─────────────
-every 30 seconds:
+# ───────────── COMPTAGE DU TEMPS COMBAT FINAL ET FIN AUTOMATIQUE ─────────────
     if {sg.state} is "started":
         if {sg.timer} is not set:
             set {sg.timer} to 350 # 5:50
-        subtract 30 from {sg.timer}
+            set {sg.divtimer} to ({sg.timer}/2)-125
+        subtract 1 from {sg.timer}
         set {_minutes} to floor({sg.timer} / 60)
         set {_seconds} to {sg.timer} - ({_minutes} * 60)
         if {_minutes} = 5:
@@ -160,41 +166,30 @@ every 30 seconds:
                 send "&eLe PvP est activé !" to {sg.players::*}
                 play sound "entity.blaze.shoot" to {sg.players::*}
                 set {sg.pvp} to true
+
         set {_formattedSeconds} to "%{_seconds}%"
-        if {_minutes} < 2:
-            if {_seconds} > 20:
-                if {_minutes} > 0:
-                    broadcast "&eCombat final &7: &cVous avez 2 minutes, bonne chance !"
-                    execute console command {sg._cmd2}
-                    set {_i} to 1
-                    loop {sg.players::*}:
-                        teleport loop-value to {sg.spawn.arena.%{_i}%}
-                        send "Téléporté %{loop-value}% à %{sg.spawn.arena.%{_i}%}%" to console
-                        add 1 to {_i}
-        if {_seconds} < 30:
-            broadcast "&eIl reste &c%{_minutes}%:%{_formattedSeconds}% &eavant la fin de la partie !"
+        if {_minutes} = floor({sg.divtimer}/60):
+            broadcast "TEST COMBAT FINAL"
+            if {_seconds} >= 59:
+                execute console command {sg._cmd2}
+                send title "&c&lCombat Final !" to {sg.players::*}
+                play sound "entity.ender_dragon.growl" to {sg.players::*}
+                set {_i} to 1
+                loop {sg.players::*}:
+                    teleport loop-value to {sg.spawn.arena.%{_i}%}
+                    send "Téléporté %{loop-value}% à %{sg.spawn.arena.%{_i}%}%" to console
+                    add 1 to {_i}
+
+        if {_minutes} > floor({sg.divtimer} / 60):
+            send action bar "&e&lCombat final dans: &c&l%({_minutes})%:%{_seconds}%" to {sg.players::*}
+        else:
+            send action bar "&e&lFin de la partie dans &c&l%{_minutes}%:%{_seconds}%" to {sg.players::*}
 
         if {sg.timer} <= 0:
-            broadcast "&eLa partie est terminée. &cPersonne ne remporte la victoire !"
-
-            # ───── Tp au lobby ─────
-            loop {sg.players::*}:
-                teleport loop-value to {sg.spawn.lobby}
-
-            # ───── CLASSEMENT DES KILLS ─────
-            broadcast "&6Classement des kills :"
-            loop {sg.players::*}:
-                set {_p} to loop-value
-                if {sg.kills.%{_p}%} is not set:
-                    set {sg.kills.%{_p}%} to 0
-                broadcast "&e%{_p}% &7→ &c%{sg.kills.%{_p}%}% &ekill(s)"
-            set {sg.state} to "waiting"
-            loop {sg.players::*}:
-                delete {sg.kills.%loop-value%}
-            clear {sg.players::*}
-            delete {sg.timer}
+            wait 1 tick
+            set {sg.state} to "ended"
+            endgame()
             
-
 # ───────────── ÉVÉNEMENT DE MORT / FIN DE PARTIE ─────────────
 on death of player:
     if {sg.state} is "started":
@@ -203,20 +198,22 @@ on death of player:
             add 1 to {sg.kills.%attacker%}
             send "&aTu as maintenant &e%{sg.kills.%attacker%}% &akill(s) !" to attacker
             
-on respawn:
-    if {sg.state} is "started":
-        wait 1 tick
-        clear inventory of player
-        remove player from {sg.players::*}
-        set player's game mode to survival
-        execute player command "spawn"
-        endgame()
+            force victim to respawn
+            wait 1 tick
+            clear inventory of victim
+            set game mode of victim to survival
+            execute victim command "spawn"
+            remove victim from {sg.players::*}
+        if size of {sg.players::*} is 1:
+            endgame()
+            
 # ───────────── TELEPORT PLAYER FREEZ AND CLEAR ─────────────
 function tpplayer():
     set {_i} to 1
     loop {sg.players::*}:
         wait 1 tick
         set {_p} to loop-value
+        teleport {_p} to {sg.spawn.arena.%{_i}%}
         set {_p}'s game mode to survival
         delete {sg.kills.%{_p}%}
         set {_p}'s health to 20
@@ -231,6 +228,7 @@ on player move:
             if loop-value is player:
                 cancel event
                 stop
+
 # ───────────── GESTION DU PVP ─────────────
 on damage:
     if {sg.pvp} is false:
@@ -250,21 +248,28 @@ on disconnect:
             set {sg.state} to "waiting"
 
 function endgame():
-    if size of {sg.players::*} = 1:
+    if size of {sg.players::*} = 1 or 0:
+        set {sg.state} to "ended"
+
+    wait  1 tick
+    if {sg.state} = "ended":
         clear inventory of {sg.players::*}
-        set {_winner} to first element of {sg.players::*}
-        if {sg.kills.%{_winner}%} > 0:
-            broadcast "&6%{_winner}% remporte la partie avec &c%{sg.kills.%{_winner}%}% &6kill(s) !"
+        if {sg.kills.%first element of {sg.players::*}%} > 0:
+            broadcast "&a&l%first element of {sg.players::*}% &6remporte la partie avec &c&l%{sg.kills.%first element of {sg.players::*}%}% &6kill(s) !"
+            play sound "entity.player.levelup" to first element of {sg.players::*}
         else:
-            broadcast "&6%{_winner}% remporte la partie par disqualification"
-        play sound "entity.player.levelup" to {_winner}
+            broadcast "&eLa partie est terminée. &cPersonne ne remporte la victoire !" 
+
+        regenchest()
         wait 5 seconds 
+        set {sg.close} to false
         set {sg.state} to "waiting"
-        execute {_winner} command "spawn"
+        set {_i} to 1
+        loop {sg.players::*}:
+            execute loop-value command "spawn"
+            add 1 to {_i}
         delete {sg.timer}
         set {sg.pvp} to false
-        execute console command {sg._cmd1} #TAILL DEBUT DE GAME
-        regenchest()
         clear {sg.players::*}
 
 # ───────────── REGEN LES COFFRES ─────────────
@@ -294,15 +299,17 @@ function regenchest():
 
 function fillChest(loc: location):
     set {_inv} to inventory of block at {_loc}
-    set {_itemCount} to random integer between 3 and 5
+    set {_itemCount} to random integer between 3 and 6
     set {_usedItems::*} to nothing
     set {_usedSlots::*} to nothing
 
     loop {_itemCount} times:
         loop 10 times:
             set {_item} to randomChestItem()
-            if {_item} is not in {_usedItems::*}:
-                add {_item} to {_usedItems::*}
+            set {_itemType} to type of {_item} # récupère l'ID de l'item
+
+            if {_itemType} is not in {_usedItems::*}:
+                add {_itemType} to {_usedItems::*}
                 set {_placed} to false
                 loop 10 times:
                     set {_slot} to random integer between 0 and 26
@@ -314,15 +321,16 @@ function fillChest(loc: location):
                 if {_placed} is true:
                     exit loop
 
+
 function randomChestItem() :: item:
-    set {_common::*} to baked potato and arrow and wooden sword and snowball and leather helmet and leather leggings and leather boots and leather chestplate and wooden sword and stone sword
-    set {_rare::*} to iron sword and iron axe and bow and splash potion of healing and iron helmet and iron boots and chainmail helmet and chainmail leggings and chainmail chestplate and chainmail boots and cooked chicken
-    set {_epic::*} to diamond sword and splash potion of swiftness and ender pearl and potion of invisibility and golden apple
+    set {_common::*} to baked potato and arrow and wooden sword and snowball and stone sword and chainmail helmet and chainmail boots and carrot and cooked chicken
+    set {_rare::*} to iron sword and iron axe and bow and splash potion of healing and iron helmet and iron boots and chainmail leggings and chainmail chestplate and fishing rod 
+    set {_epic::*} to diamond sword and golden apple and diamond helmet and diamond boots and potion of strength and trident
 
     set {_roll} to random integer between 1 and 100
     if {_roll} <= 60:
         set {_item} to random element out of {_common::*}
-    else if {_roll} <= 90:
+    else if {_roll} <= 95:
         set {_item} to random element out of {_rare::*}
     else:
         set {_item} to random element out of {_epic::*}
@@ -335,30 +343,30 @@ function randomChestItem() :: item:
         set amount of {_item} to random integer between 2 and 5
     else if {_item} is baked potato:
         set amount of {_item} to random integer between 1 and 4
+    else if {_item} is carrot:
+        set amount of {_item} to random integer between 1 and 4
     else:
         set amount of {_item} to 1
 
     return {_item}
 
-
-    # ───────────── BONUS ─────────────
+# ───────────── BONUS ─────────────
 on skript start:  
     set {sg.state} to "waiting"
     clear {sg.players::*}
     delete {sg.timer}
 
 on break:
-    if {sg.state} is "started":
-        cancel event
+    if {sg.state} is "waiting" or "started" or "starting":
+        loop {sg.players::*}:
+            if loop-value is player:
+                cancel event
+                stop
 
 on rightclick holding a red bed:
-    if name of player's tool is "&cQuitter la partie":
+    if name of player's tool is "&c&lQuitter la partie":
         execute player command "sg_leave"
 
 on drop:
-    if player's tool is red bed named "&cQuitter la partie":
-        cancel event
-
-on drop:
-    if event-item is red bed named "&cQuitter la partie":
+    if event-item is red bed named "&c&lQuitter la partie":
         cancel event
